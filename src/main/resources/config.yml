@@ -1,0 +1,9 @@
+timer: 120
+jackpot: 0
+
+mysql:
+  host: localhost
+  user: root
+  pass: pass
+  port: 3306
+  db: world

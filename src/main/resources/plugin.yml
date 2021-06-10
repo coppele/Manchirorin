@@ -1,0 +1,17 @@
+name: Manchirorin
+version: @version@
+main: manchiro.manchirorin.Manchirorin
+api-version: 1.16
+authors: [Mr_IK, Mohaimen_Ksr]
+database: true
+depend:  [Vault]
+softdepend: [Vault]
+permissions:
+  manchiro.op:
+    default: op
+    children:
+      - manchiro.switch
+  manchiro.switch:
+    default: op
+commands:
+  mch:
