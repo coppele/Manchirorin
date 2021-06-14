@@ -6,15 +6,17 @@ import org.bukkit.entity.Player;
 import org.bukkit.scheduler.BukkitRunnable;
 
 import java.security.SecureRandom;
+import java.util.Arrays;
 import java.util.Iterator;
 import java.util.UUID;
-import java.util.function.Consumer;
 import java.util.stream.Collectors;
+import java.util.stream.Stream;
 
 public class MCHData {
     public static final SecureRandom random = new SecureRandom();
     public static Iterator<MCHStatus> iterator;
     public static Manchirorin plugin;
+
     public static void loadEnable(Manchirorin plugin){
         MCHData.plugin = plugin;
     }
@@ -29,66 +31,60 @@ public class MCHData {
         }
         plugin.mch = false;
         plugin.timer.betTime();
-        plugin.game = true;
+        plugin.open = true;
     }
     public static void gameStart(Player p, double bet, int hito, int... def) {
        gameStart(p, bet, hito);
        plugin.owner.def = def;
     }
 
-    public static void reset(){
-        reset(false);
-    }
     public static void reset(boolean insertable){
+        //plugin.totalBet.transferBalanceToPlayer(p,plugin.bet*5,TransactionCategory.GAMBLE,TransactionType.DEPOSIT,"mcr cancel: "+Bukkit.getPlayer(uuid).getName());
         iterator.forEachRemaining(status -> {
-            plugin.vault.deposit(status.player, status.balance);
-            //plugin.totalBet.transferBalanceToPlayer(p,plugin.bet*5,TransactionCategory.GAMBLE,TransactionType.DEPOSIT,"mcr cancel: "+Bukkit.getPlayer(uuid).getName());
+            if (status.quit) return;
+            MCHData.deposit(status);
         });
         if (insertable) insert(plugin);
         plugin.children.clear();
         plugin.bet = -1;
         plugin.owner = null;
         plugin.maxAmount = -1;
-        plugin.game = false;
+        plugin.open = false;
         plugin.mch = false;
         Bukkit.broadcastMessage(plugin.PREFIX +" §a§lマンチロが終了しました。");
         plugin.PREFIX = "§f[§d§lマ§a§lン§f§lチロ§r]";
     }
 
-    public static void timeEnd(){
-        plugin.vault.deposit(plugin.owner.player ,plugin.owner.balance);
+    public static void timeEnd() {
+        deposit(plugin.owner);
         Bukkit.broadcastMessage(plugin.PREFIX +" §4§l子が集まらなかったため中止しました。");
-        reset();
+        iterator = plugin.children.iterator();
+        reset(false);
     }
 
     public static void cancel(){
-        plugin.vault.deposit(plugin.owner.player, plugin.owner.balance);
-        if (iterator == null) iterator = plugin.children.iterator();
-        Bukkit.broadcastMessage(plugin.PREFIX +" §4§lキャンセルされました。");
-        reset();
+        deposit(plugin.owner);
+        iterator = plugin.children.iterator();
+        reset(false);
     }
 
     public static void gamePush(){
         plugin.mch = true;
+        plugin.open = false;
         iterator = plugin.children.iterator();
         Bukkit.broadcastMessage(plugin.PREFIX +" §a§lマンチロがスタートしました！");
         sendKankeisya(" §a§l"+plugin.owner.getName()+"§f§lさん(親)がサイコロを振っています…§e§l§kaaa");
-        int dice1, dice2, dice3;
-        if (plugin.owner.def != null) {
-            dice1 = plugin.owner.def[0];
-            dice2 = plugin.owner.def[1];
-            dice3 = plugin.owner.def[2];
-        } else {
-            dice1 = random.nextInt(6)+1;
-            dice2 = random.nextInt(6)+1;
-            dice3 = random.nextInt(6)+1;
+        int[] dice = new int[3];
+        for (int i = 0; i < 3; i++) {
+            dice[i] = plugin.owner.def != null ? plugin.owner.def[i] : random.nextInt(6) + 1;
         }
         new BukkitRunnable(){
             @Override
             public void run() {
-                if(!plugin.mch) return;
-                sendKankeisya(" §a§lﾊﾟｶｯ！  §f§l "+dice1+"・"+dice2+"・"+dice3+" ！！");
-                MCHRole role = MCHRole.getRole(dice1, dice2, dice3);
+                if (!plugin.mch) return;
+                String result = Stream.of(dice).map(Arrays::toString).collect(Collectors.joining("・"));
+                sendKankeisya(" §a§lﾊﾟｶｯ！  §f§l " + result + " ！！");
+                MCHRole role = MCHRole.getRole(dice[0], dice[1], dice[2]);
                 plugin.owner.role = role;
                 if (role == MCHRole.NONE) {
                     sendKankeisya(" §a§l役無し (ﾟ∀ﾟ)ｷﾀｺﾚ!!");
@@ -110,7 +106,7 @@ public class MCHData {
                     plugin.owner.balance += jack;
                     //plugin.vault.givePlayerMoney(plugin.parent,jack,TransactionType.DEPOSIT,"mcr jackpot!! user: "+Bukkit.getPlayer(plugin.parent).getName());
                     sendTitle("§0§l§kaaaaa§4§lJ§6§lA§e§lC§a§lK§2§lP§b§lO§3§lT§0§l§kaaaaa","§e§l当選者: §f§l"+plugin.owner.getName()+" §6§l当選金額: §f§l"+jack+" 円",100);
-                    plugin.vault.deposit(plugin.owner.player, plugin.owner.balance);
+                    deposit(plugin.owner);
                     //plugin.vault.transferMoneyPoolToPlayer(plugin.totalBet.getId(),plugin.parent,plugin.parentbal,TransactionCategory.GAMBLE,TransactionType.WIN,"mcr jackpot!! user: "+Bukkit.getPlayer(plugin.parent).getName());
                     Bukkit.broadcastMessage(plugin.PREFIX +" §a§l"+plugin.owner.getName()+"§f§l: §e§l"+plugin.owner.wager +" 円 → "+plugin.owner.balance+" 円");
                     reset(true);
@@ -131,7 +127,7 @@ public class MCHData {
                     childturn();
                 } else {
                     Bukkit.broadcastMessage(plugin.PREFIX +"§4エラー発生。未知の目です。");
-                    reset();
+                    reset(false);
                 }
             }
         }.runTaskLater(plugin,100);
@@ -142,15 +138,17 @@ public class MCHData {
         new BukkitRunnable(){
             @Override
             public void run() {
-                if (plugin.mch && iterator.hasNext()) {
-                    childbattle(iterator.next());
+                while (plugin.mch && iterator.hasNext()) {
+                    MCHStatus status = iterator.next();
+                    if (status.quit) continue;
+                    childbattle(status);
                     return;
                 }
                 cancel();
-                if (!plugin.game) return;
+                if (!plugin.mch) return;
                 Bukkit.broadcastMessage(plugin.PREFIX + " §a§l" + plugin.owner.getName() + "§f§l: §e§l" + plugin.bet * 5 * plugin.maxAmount + " 円 → " + plugin.owner.balance + " 円§e(うち手数料" + plugin.owner.balance / 100 + " 円)");
                 plugin.owner.balance -= plugin.owner.balance / 100;
-                plugin.vault.deposit(plugin.owner.player, plugin.owner.balance);
+                deposit(plugin.owner);
                 //plugin.vault.transferMoneyPoolToPlayer(plugin.totalBet.getId(),plugin.parent,plugin.parentbal - (plugin.parentbal/100),TransactionCategory.GAMBLE,TransactionType.DEPOSIT,"mcr parent deposit: "+Bukkit.getPlayer(plugin.parent).getName());
                 plugin.addJackpot(plugin.owner.wager / 100);
                 reset(true);
@@ -160,22 +158,17 @@ public class MCHData {
 
     public static void childbattle(MCHStatus status){
         sendKankeisya(" §c§l"+status.getName()+"§f§lさん(子)がサイコロを振っています…§e§l§kaaa");
-        int dice1, dice2, dice3;
-        if (status.def != null) {
-            dice1 = status.def[0];
-            dice2 = status.def[1];
-            dice3 = status.def[2];
-        } else {
-            dice1 = random.nextInt(6)+1;
-            dice2 = random.nextInt(6)+1;
-            dice3 = random.nextInt(6)+1;
+        int[] dice = new int[3];
+        for (int i = 0; i < 3; i++) {
+            dice[i] = status.def != null ? status.def[i] : random.nextInt(6) + 1;
         }
         new BukkitRunnable(){
             @Override
             public void run() {
-                if (!plugin.game) return;
-                sendKankeisya(" §a§lﾊﾟｶｯ！  §f§l " + dice1 + "・" + dice2 + "・" + dice3 + " ！！");
-                MCHRole role = MCHRole.getRole(dice1, dice2, dice3);
+                if (!plugin.mch || status.quit) return;
+                String result = Stream.of(dice).map(Arrays::toString).collect(Collectors.joining("・"));
+                sendKankeisya(" §a§lﾊﾟｶｯ！  §f§l " + result + " ！！");
+                MCHRole role = MCHRole.getRole(dice[0], dice[1], dice[2]);
                 status.role = role;
                 if (role == MCHRole.NONE || role == MCHRole.SAIKO) {
                     sendKankeisya(" §a§l役無し (ﾟ∀ﾟ)ｷﾀｺﾚ!!");
@@ -196,7 +189,7 @@ public class MCHData {
                     double jack = Math.min(plugin.jackpot, plugin.bet * 10);
                     plugin.takeJackpot(jack);
                     status.balance += jack;
-                    plugin.vault.deposit(status.player, status.balance);
+                    deposit(status);
                     //plugin.vault.givePlayerMoney(uuid,jack,TransactionType.WIN,"mcr jackpot!! deposit: "+Bukkit.getPlayer(uuid).getName());
                     sendTitle("§0§l§kaaaaa§4§lJ§6§lA§e§lC§a§lK§2§lP§b§lO§3§lT§0§l§kaaaaa","§e§l当選者: §f§l"+status.getName()+" §6§l当選金額: §f§l"+jack+" 円",100);
                     //plugin.vault.transferMoneyPoolToPlayer(plugin.totalBet.getId(),uuid,plugin.onebet*5,TransactionCategory.GAMBLE,TransactionType.DEPOSIT,"mcr jackpot!! deposit: "+Bukkit.getPlayer(uuid).getName());
@@ -218,7 +211,7 @@ public class MCHData {
                     else vsOya(plugin.owner.role.role > role.role, status, 1.0);
                 } else {
                     Bukkit.broadcastMessage(plugin.PREFIX +"§4エラー発生。未知の目です。");
-                    reset();
+                    reset(false);
                 }
             }
         }.runTaskLater(plugin,100);
@@ -231,7 +224,7 @@ public class MCHData {
             status.balance -= plugin.bet * bairitu;
             Bukkit.broadcastMessage(plugin.PREFIX +" §c§l"+status.getName()+"§f§l: §e§l"+status.wager+" 円 → "+ status.balance +" 円§e(うち手数料"+retn+" 円)");
             status.balance -= retn;
-            plugin.vault.deposit(status.player, status.balance);
+            deposit(status);
             //plugin.vault.transferMoneyPoolToPlayer(plugin.totalBet.getId(),uuid,retn,TransactionCategory.GAMBLE,TransactionType.DEPOSIT,"mcr lose return: "+Bukkit.getPlayer(uuid).getName());
             plugin.addJackpot(retn);
         });
@@ -241,7 +234,7 @@ public class MCHData {
         Bukkit.broadcastMessage(plugin.PREFIX +" §a§l"+plugin.owner.getName()+"§f§l: §e§l"+plugin.owner.wager +" 円 → "+plugin.owner.balance +" 円§e(うち手数料"+with+" 円)");
         plugin.addJackpot(with);
         plugin.owner.balance -= with;
-        plugin.vault.deposit(plugin.owner.player, plugin.owner.balance);
+        deposit(plugin.owner);
         reset(true);
     }
     public static void oyaLose(double bairitu){
@@ -252,7 +245,7 @@ public class MCHData {
             Bukkit.broadcastMessage(plugin.PREFIX +" §c§l"+status.getName()+"§f§l: §e§l"+status.wager+ " 円 → "+ status.balance +" 円§e(うち手数料"+ plugin.bet/100+" 円)");
             status.balance -= plugin.bet / 100;
             plugin.addJackpot(status.balance);
-            plugin.vault.deposit(status.player, status.balance);
+            deposit(status);
             //plugin.vault.transferMoneyPoolToPlayer(plugin.totalBet.getId(),uuid,with + (plugin.onebet * 5) - (plugin.onebet/100) ,TransactionCategory.GAMBLE,TransactionType.DEPOSIT,"mcr win: "+Bukkit.getPlayer(uuid).getName());
         });
         plugin.owner.balance -= retn * plugin.maxAmount;
@@ -261,7 +254,7 @@ public class MCHData {
         Bukkit.broadcastMessage(plugin.PREFIX +" §a§l"+plugin.owner.getName() +"§f§l: §e§l"+ plugin.owner.wager +" 円 → "+plugin.owner.balance +" 円§e(うち手数料"+with+" 円)");
         plugin.addJackpot(with);
         plugin.owner.balance -= with;
-        plugin.vault.deposit(plugin.owner.player, plugin.owner.balance);
+        deposit(plugin.owner);
         reset(true);
     }
 
@@ -280,14 +273,14 @@ public class MCHData {
         }
         Bukkit.broadcastMessage(plugin.PREFIX +" §c§l"+status.getName()+"§f§l: §e§l"+ status.wager +" 円 → "+ status.balance +" 円§e(うち手数料"+ plugin.bet/100 +" 円)");
         status.balance -= plugin.bet/100;
-        plugin.vault.deposit(status.player, status.balance);
+        deposit(status);
         plugin.addJackpot(plugin.bet/100);
     }
 
     public static void draw(MCHStatus status){
         Bukkit.broadcastMessage(plugin.PREFIX +" §e§l結果: §a§l引き分け！！");
         Bukkit.broadcastMessage(plugin.PREFIX +" §c§l"+status.getName()+"§f§l: §e§l"+ status.wager +" 円 → "+ status.balance+" 円");
-        plugin.vault.deposit(status.player, status.balance);
+        deposit(status);
         //plugin.vault.transferMoneyPoolToPlayer(plugin.totalBet.getId(),uuid,plugin.onebet*5,TransactionCategory.GAMBLE,TransactionType.DEPOSIT,"mcr draw: "+Bukkit.getPlayer(uuid).getName());
     }
 
@@ -304,14 +297,11 @@ public class MCHData {
         }
     }
 
-    public static void funcKankeisya(Consumer<MCHStatus> consumer){
-        for (MCHStatus status : plugin.children) {
-            consumer.accept(status);
-        }
-        consumer.accept(plugin.owner);
-    }
     public static void sendKankeisya(String message){
-        funcKankeisya(player -> player.player.sendMessage(plugin.PREFIX + message));
+        for (MCHStatus status : plugin.children) {
+            status.player.sendMessage(plugin.PREFIX + message);
+        }
+        plugin.owner.player.sendMessage(plugin.PREFIX + message);
     }
 
     public static void gotoJackpot(){
@@ -348,5 +338,10 @@ public class MCHData {
                 mysql.close();
             }
         }.runTask(plugin);
+    }
+
+    public static void deposit(MCHStatus status) {
+        if (status.balance == 0) return;
+        plugin.vault.deposit(status.player, status.balance);
     }
 }

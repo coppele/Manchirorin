@@ -5,32 +5,22 @@ import org.bukkit.entity.Player;
 import org.bukkit.scheduler.BukkitRunnable;
 
 public class Timer {
-    Manchirorin plugin;
-    int time;
+    private final Manchirorin plugin;
     public Timer(Manchirorin plugin) {
         this.plugin = plugin;
     }
     public void betTime(){
-
-        time = plugin.config.getInt("time",120);
-
         new BukkitRunnable(){
+            public int time = plugin.config.getInt("time",120);
             @Override
             public void run() {
-                if(!plugin.game) {
-                    time = 0;
-                    cancel();
-                    return;
-                }
-                if(plugin.children.size() == plugin.maxAmount) {
-                    time = 0;
+                if(!plugin.open || plugin.children.size() == plugin.maxAmount) {
                     cancel();
                     return;
                 }
 
                 if (time == 0){
                     MCHData.timeEnd();
-                    time = 0;
                     cancel();
                     return;
                 }

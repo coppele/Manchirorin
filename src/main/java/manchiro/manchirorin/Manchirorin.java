@@ -16,7 +16,7 @@ public final class Manchirorin extends JavaPlugin implements Listener {
 
     String PREFIX = "§f[§d§lマ§a§lン§f§lチロ§r]";
     String PERM = "manchiro.op", SWITCH = "manchiro.switch";
-    boolean mch = false, game = false, power = true;
+    boolean mch = false, open = false, power = true;
     MCHStatus owner;
     List<MCHStatus> children;
     int maxAmount;
@@ -104,11 +104,11 @@ public final class Manchirorin extends JavaPlugin implements Listener {
                     player.sendMessage(PREFIX + " §c現在マンチロがストップしています");
                     return true;
                 }
-                if (args.length < 3 && !hasPerm(PERM, player)) {
+                if (args.length < 3 || args.length > 3 && !hasPerm(PERM, player)) {
                     player.sendMessage(PREFIX + " §c引数の数が違っています");
                     return true;
                 }
-                if (game) {
+                if (open || mch) {
                     player.sendMessage(PREFIX + " §c現在マンチロが開始されています");
                     return true;
                 }
@@ -153,7 +153,7 @@ public final class Manchirorin extends JavaPlugin implements Listener {
                     player.sendMessage(PREFIX + " §c現在ゲーム中です");
                     return true;
                 }
-                if (!game) {
+                if (!open) {
                     player.sendMessage(PREFIX + " §c現在マンチロは開催されていません");
                     return true;
                 }
@@ -189,8 +189,9 @@ public final class Manchirorin extends JavaPlugin implements Listener {
 
             //cancel ゲームの中断 op専用
             if (args[0].equals("cancel") && hasPerm(PERM, player)) {
-                if (game) {
+                if (open && mch) {
                     player.sendMessage(PREFIX + " キャンセルしました");
+                    Bukkit.broadcastMessage(PREFIX +" §4§lキャンセルされました。");
                     MCHData.cancel();
                 } else {
                     player.sendMessage(PREFIX + " 既にキャンセルしています");
@@ -230,7 +231,7 @@ public final class Manchirorin extends JavaPlugin implements Listener {
 
             //reset 親と子をnullにする op専用
             if (args[0].equals("reset") && hasPerm(PERM, player)) {
-                MCHData.reset();
+                MCHData.reset(false);
             } else {
                 player.sendMessage(PREFIX + " §c使い方が間違っています");
                 player.sendMessage(PREFIX + " §c/mch と入力するとコマンド一覧が見れます");
@@ -242,14 +243,24 @@ public final class Manchirorin extends JavaPlugin implements Listener {
 
     @EventHandler
     //サーバーから抜けたときゲームをキャンセル
-    public void onQuit(PlayerQuitEvent e) {
-        Player player = e.getPlayer();
+    public void onQuit(PlayerQuitEvent event) {
+        Player player = event.getPlayer();
         if (owner.player.equals(player)) {
-            Bukkit.broadcastMessage(PREFIX +"§4§l親("+player.getDisplayName()+"§4§l)がサーバーから退出したためキャンセルします");
+            Bukkit.broadcastMessage(PREFIX +" §4§l親("+player.getDisplayName()+"§4§l)がサーバーから退出したためキャンセルします");
             MCHData.cancel();
         } else if (children.stream().map(MCHStatus::getUniqueId).anyMatch(player.getUniqueId()::equals)) {
-            Bukkit.broadcastMessage(PREFIX +"§4§l子("+player.getDisplayName()+"§4§l)がサーバーから退出したためキャンセルします");
-            MCHData.cancel();
+            if (open) {
+                Bukkit.broadcastMessage(PREFIX + " " + player.getName() + "さんが退場しました");
+                children.removeIf(status -> status.getUniqueId().equals(player.getUniqueId()));
+                return;
+            }
+            Bukkit.broadcastMessage(PREFIX +" §4§l子("+player.getDisplayName()+"§4§l)がサーバーから退出しました");
+            for (MCHStatus status : children) {
+                if (!status.getUniqueId().equals(player.getUniqueId())) continue;
+                status.quit = true;
+                status.balance = 0;
+                return;
+            }
         }
     }
 

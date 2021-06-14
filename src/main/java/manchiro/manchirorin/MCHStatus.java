@@ -10,6 +10,7 @@ public class MCHStatus {
     public double balance;
     public MCHRole role = null;
     public int[] def = null; // debug専用です
+    public boolean quit = false;
 
     public MCHStatus(Player player, double wager) {
         this.player = player;
@@ -26,7 +27,7 @@ public class MCHStatus {
 
     @Override
     public String toString() {
-        return String.format("{name=%s, uuid=%s, bet=%s, bal=%s, role=%s}",
-                getName(), getUniqueId(), wager, balance, role == null ? MCHRole.NONE : role.name());
+        return String.format("{name=%s, uuid=%s, bet=%s, bal=%s, role=%s%s}",
+                getName(), getUniqueId(), wager, balance, role == null ? MCHRole.NONE : role.name(), quit ? ", quit=true" : "");
     }
 }
